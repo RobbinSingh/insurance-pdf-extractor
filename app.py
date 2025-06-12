@@ -29,7 +29,7 @@ def extract_policy_data(text):
     If any field is not available, return "Not Found".
 
     Format the output as JSON with keys:
-    name, policy_number, start_date, end_date, sum_insured, insurance_type, od_amount, tp_amount
+    customer name, policy_number, start_date, end_date, sum_insured, insurance_type, od_amount, tp_amount
 
     Document:
     """ + text
