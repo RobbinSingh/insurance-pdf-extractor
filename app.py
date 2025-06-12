@@ -1,98 +1,119 @@
-import os
-import fitz  # PyMuPDF
-import csv
-import io
-import json
 import streamlit as st
+import fitz  # PyMuPDF
+import os
+import openai
+import json
 from dotenv import load_dotenv
-from openai import OpenAI
+import pandas as pd
 
 # Load environment variables
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
 
-# Initialize OpenAI client
-client = OpenAI(api_key=api_key)
-
-st.title("📄 Upload Insurance Policy PDF")
-
-uploaded_file = st.file_uploader("Upload PDF file", type="pdf")
-
-def extract_text_from_pdf(file):
-    with fitz.open(stream=file.read(), filetype="pdf") as doc:
-        return "\n".join(page.get_text() for page in doc)
+# Set OpenAI client
+client = openai.OpenAI(api_key=api_key)
 
 def extract_policy_data(text):
     prompt = f"""
-You are a smart data extractor. From the following insurance policy PDF text, extract:
+    Extract the following information from the given insurance policy document:
 
-- Policy Holder Name
-- Policy Number
-- Insurance Company
-- Policy Start Date
-- Policy End Date
-- Type of Insurance (Motor/Health/Life/etc.)
-- Sum Insured
-- OD Amount (Own Damage)
-- TP Amount (Third Party)
+    1. Name of Policy Holder
+    2. Policy Number
+    3. Policy Start Date
+    4. Policy End Date
+    5. Sum Insured
+    6. Type of Insurance (Health, Life, Motor, Travel, etc.)
+    7. OD Amount (only for Motor policies)
+    8. TP Amount (only for Motor policies)
 
-Rules:
-- If it's NOT a motor insurance policy, OD and TP should be '0'.
-- Always return result in this exact JSON format:
+    If any field is not available, return "Not Found".
 
-{{
-  "Policy Holder Name": "",
-  "Policy Number": "",
-  "Insurance Company": "",
-  "Policy Start Date": "",
-  "Policy End Date": "",
-  "Type of Insurance": "",
-  "Sum Insured": "",
-  "OD Amount": "",
-  "TP Amount": ""
-}}
+    Format the output as JSON with keys:
+    name, policy_number, start_date, end_date, sum_insured, insurance_type, od_amount, tp_amount
 
-Text:
-{text}
-"""
+    Document:
+    """ + text
 
     response = client.chat.completions.create(
         model="gpt-4",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0
+        messages=[
+            {"role": "system", "content": "You are an expert at reading insurance documents."},
+            {"role": "user", "content": prompt},
+        ],
     )
 
     try:
-        content = response.choices[0].message.content.strip()
-        data = json.loads(content)
+        data = json.loads(response.choices[0].message.content)
+        if data.get("insurance_type", "").lower() != "motor":
+            data["od_amount"] = None
+            data["tp_amount"] = None
         return data
-    except Exception as e:
-        st.error(f"Error extracting data: {e}")
-        return None
+    except:
+        return {"error": "Could not parse response."}
 
-if uploaded_file:
-    st.success("✅ File uploaded successfully. Extracting text...")
+def extract_text_from_pdf(pdf_file):
+    doc = fitz.open(stream=pdf_file.read(), filetype="pdf")
+    text = ""
+    for page in doc:
+        text += page.get_text()
+    return text
 
-    text = extract_text_from_pdf(uploaded_file)
-    st.info("🤖 Asking AI to extract policy data...")
+st.set_page_config(page_title="📄 Insurance Policy Extractor", layout="wide")
+st.title("🧾 Insurance Policy PDF Extractor")
+st.markdown("Upload one or more policy documents to extract details like policy number, insured amount, and more.")
 
-    result = extract_policy_data(text)
+mode = st.radio("Choose upload mode:", ["Single Upload", "Bulk Upload"], horizontal=True)
 
-    if result:
-        st.success("🎯 Policy Data Extracted Successfully!")
-        st.json(result)
+if mode == "Single Upload":
+    uploaded_file = st.file_uploader("Upload a PDF file", type="pdf")
+    if uploaded_file:
+        with st.spinner("Processing file..."):
+            text = extract_text_from_pdf(uploaded_file)
+            result = extract_policy_data(text)
+            st.subheader("📋 Extracted Data")
 
-        # CSV download
-        output = io.StringIO()
-        writer = csv.DictWriter(output, fieldnames=result.keys())
-        writer.writeheader()
-        writer.writerow(result)
+            if "error" in result:
+                st.error(result["error"])
+            else:
+                for label, value in result.items():
+                    if value and label in ["od_amount", "tp_amount"] and result.get("insurance_type", "").lower() != "motor":
+                        continue
+                    if value is not None and label not in ["od_amount", "tp_amount"]:
+                        st.write(f"**{label.replace('_', ' ').title()}**: {value}")
+                    elif label in ["od_amount", "tp_amount"] and value:
+                        st.write(f"**{label.replace('_', ' ').title()}**: {value}")
 
-        st.download_button(
-            label="⬇️ Download CSV",
-            data=output.getvalue(),
-            file_name="extracted_policy_data.csv",
-            mime="text/csv"
-        )
-    else:
-        st.error("❌ Failed to extract policy data.")
+                df = pd.DataFrame([result])
+                csv = df.to_csv(index=False).encode('utf-8')
+                json_data = json.dumps(result, indent=2).encode('utf-8')
+                st.download_button("📥 Download as CSV", csv, "extracted_data.csv", "text/csv")
+                st.download_button("📥 Download as JSON", json_data, "extracted_data.json", "application/json")
+
+elif mode == "Bulk Upload":
+    uploaded_files = st.file_uploader("Upload PDF Files", type="pdf", accept_multiple_files=True)
+    if uploaded_files:
+        all_data = []
+        for uploaded_file in uploaded_files:
+            with st.spinner(f"Processing {uploaded_file.name}..."):
+                text = extract_text_from_pdf(uploaded_file)
+                result = extract_policy_data(text)
+                result["filename"] = uploaded_file.name
+                all_data.append(result)
+                st.subheader(f"📑 Extracted from {uploaded_file.name}")
+                if "error" in result:
+                    st.error(result["error"])
+                else:
+                    for label, value in result.items():
+                        if value and label in ["od_amount", "tp_amount"] and result.get("insurance_type", "").lower() != "motor":
+                            continue
+                        if value is not None and label not in ["od_amount", "tp_amount"]:
+                            st.write(f"**{label.replace('_', ' ').title()}**: {value}")
+                        elif label in ["od_amount", "tp_amount"] and value:
+                            st.write(f"**{label.replace('_', ' ').title()}**: {value}")
+
+        st.subheader("📥 Download All Extracted Data")
+        df = pd.DataFrame(all_data)
+        csv = df.to_csv(index=False).encode('utf-8')
+        json_data = json.dumps(all_data, indent=2).encode('utf-8')
+        st.download_button("📦 Download as CSV", csv, "all_extracted_data.csv", "text/csv")
+        st.download_button("📦 Download as JSON", json_data, "all_extracted_data.json", "application/json")
