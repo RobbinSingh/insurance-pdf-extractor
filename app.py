@@ -5,6 +5,7 @@ import tempfile
 import os
 import csv
 import io
+import json
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -55,37 +56,47 @@ def extract_text_from_pdf(uploaded_file):
 # ---------- FUNCTION: EXTRACT FIELDS VIA OPENAI ---------- #
 def extract_policy_fields(text):
     prompt = f"""
-Extract the following fields from the insurance policy text:
-- Policy Number
-- Policy Start Date
-- Policy End Date
-- SP Code
-- Customer Name
-- Gross Amount
-- Net Amount
-- Sum Insured
-- OD Amount
-- TP Amount
-- Policy Type (Motor/Non-Motor)
+You are a data extraction assistant. Extract the following fields from the insurance policy text below.
 
-Return as JSON with keys:
-policy_number, start_date, end_date, sp_code, customer_name, gross_amount, net_amount, sum_insured, od_amount, tp_amount, policy_type
+Fields:
+- policy_number
+- start_date
+- end_date
+- sp_code
+- customer_name
+- gross_amount
+- net_amount
+- sum_insured
+- od_amount
+- tp_amount
+- policy_type (Motor or Non-Motor)
+
+IMPORTANT:
+- Return only a valid raw JSON object. Do NOT add triple backticks, explanations, or text around it.
+- Use `null` for fields like od_amount and tp_amount if it's not a motor policy.
 
 Policy Text:
 {text}
-"""
+    """
 
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[{"role": "user", "content": prompt}],
         temperature=0
     )
-    import json
+
+    raw_response = response.choices[0].message.content.strip()
+
+    # Fix: Strip code blocks and parse clean JSON
     try:
-        json_result = json.loads(response.choices[0].message.content)
-        return json_result
+        if raw_response.startswith("```json"):
+            raw_response = raw_response.replace("```json", "").replace("```", "").strip()
+        return json.loads(raw_response)
     except Exception as e:
-        raise ValueError(f"Failed to parse response: {e}\nRaw: {response.choices[0].message.content}")
+        st.error("❌ Failed to parse AI response. Raw response shown below for debugging:")
+        st.code(raw_response)
+        raise e
+
 
 # ---------- MAIN LOGIC ---------- #
 mode = st.radio("Select Upload Mode", ["Single PDF", "Multiple PDFs"])
