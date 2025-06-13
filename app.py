@@ -1,6 +1,4 @@
 import streamlit as st
-from streamlit_lottie import st_lottie
-import json
 import fitz  # PyMuPDF
 import tempfile
 import pandas as pd
@@ -8,61 +6,50 @@ from openai import OpenAI
 import os
 from dotenv import load_dotenv
 
-# Load API Key
+# Load environment variables
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Load Lottie Animation
-def load_lottie(filepath):
-    with open(filepath, "r") as f:
-        return json.load(f)
-
-lottie_scanner = load_lottie("scanner.json")
-
-# Streamlit Page Config
+# --- Styling ---
 st.set_page_config(page_title="Insurance Policy Extractor", layout="wide")
-
-# Custom Styling
 st.markdown("""
     <style>
-        .main {
-            background-color: #0d1117;
-            color: #c9d1d9;
-        }
         .hero {
             text-align: center;
+            background: #0f172a;
             padding: 2rem;
-            background: linear-gradient(90deg, #00ffcc, #0066ff);
+            border-radius: 1rem;
+            margin-bottom: 2rem;
             color: white;
-            border-radius: 20px;
-            margin-bottom: 30px;
         }
-        .card {
-            background-color: #161b22;
-            border-radius: 12px;
-            padding: 15px;
-            margin: 10px;
-            box-shadow: 0 0 10px #00ffcc;
+        .uploaded {
+            background-color: #1e293b;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            color: #ffffff;
+        }
+        .data-box {
+            background-color: #f1f5f9;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
         }
     </style>
 """, unsafe_allow_html=True)
 
-<<<<<<< HEAD
-# Hero Section
+# --- Hero Section ---
 st.markdown("""
     <div class="hero">
         <h1>📄 Insurance Policy Extractor</h1>
         <p>Upload your PDF(s) and get structured, AI-generated policy details.</p>
     </div>
 """, unsafe_allow_html=True)
-=======
-    Format the output as JSON with keys:
-    customer name, policy_number, start_date, end_date, sum_insured, insurance_type, od_amount, tp_amount
->>>>>>> 125058b2a9ffd0800088d66b78e86dc732e5f32d
 
-st_lottie(lottie_scanner, height=200)
+# --- File Uploader ---
+upload_mode = st.radio("Select upload mode:", ["Single PDF", "Multiple PDFs"])
+uploaded_files = st.file_uploader("Upload PDF(s)", type=["pdf"], accept_multiple_files=(upload_mode == "Multiple PDFs"))
 
-# PDF to Text Extraction
+# --- Function to extract text ---
 def extract_text_from_pdf(uploaded_file):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         tmp.write(uploaded_file.read())
@@ -73,83 +60,67 @@ def extract_text_from_pdf(uploaded_file):
         text += page.get_text()
     return text
 
-# AI Policy Info Extraction
+# --- Function to call OpenAI ---
 def extract_policy_fields(text):
     prompt = f"""
-Extract the following fields from the insurance policy text:
-- Policy Number
-- Policy Start Date
-- Policy End Date
-- SP Code
-- Customer Name
-- Gross Amount
-- Net Amount
-- Sum Insured
-- TP Amount (if motor policy, else 0)
-- OD Amount (if motor policy, else 0)
+Extract the following fields from the insurance policy text.
+Format the output as JSON with keys:
+customer_name, policy_number, start_date, end_date, sum_insured, insurance_type, gross_amount, net_amount, od_amount, tp_amount
 
-Return this format:
-Policy Number:  
-Start Date:  
-End Date:  
-SP Code:  
-Customer Name:  
-Gross Amount:  
-Net Amount:  
-Sum Insured:  
-TP Amount:  
-OD Amount:  
+Text to extract from:
+{text}
 """
     response = client.chat.completions.create(
         model="gpt-4o",
-        messages=[{"role": "user", "content": prompt + "\n\nPolicy Text:\n" + text}],
-        temperature=0
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0,
     )
     return response.choices[0].message.content
 
-# Choose Upload Mode
-upload_mode = st.radio("Select Upload Mode", ["Single PDF", "Multiple PDFs"], horizontal=True)
+# --- Main Logic ---
+if uploaded_files:
+    results = []
+    files = uploaded_files if isinstance(uploaded_files, list) else [uploaded_files]
 
-# DataFrame for CSV Export
-df_output = pd.DataFrame()
+    for file in files:
+        st.markdown(f"<div class='uploaded'>📤 Processing: <b>{file.name}</b></div>", unsafe_allow_html=True)
+        extracted_text = extract_text_from_pdf(file)
+        try:
+            result_raw = extract_policy_fields(extracted_text)
+            result_dict = eval(result_raw)  # Safely parse JSON if returned correctly
+            is_motor = result_dict.get("insurance_type", "").lower() == "motor"
 
-if upload_mode == "Single PDF":
-    uploaded_file = st.file_uploader("Upload a Policy PDF", type=["pdf"])
-    if uploaded_file:
-        st.success("✅ File uploaded. Extracting...")
-        text = extract_text_from_pdf(uploaded_file)
-        result = extract_policy_fields(text)
+            display_fields = {
+                "Customer Name": result_dict.get("customer_name", ""),
+                "Policy Number": result_dict.get("policy_number", ""),
+                "Start Date": result_dict.get("start_date", ""),
+                "End Date": result_dict.get("end_date", ""),
+                "Sum Insured": result_dict.get("sum_insured", ""),
+                "Insurance Type": result_dict.get("insurance_type", ""),
+                "Gross Amount": result_dict.get("gross_amount", ""),
+                "Net Amount": result_dict.get("net_amount", ""),
+            }
 
-        # Display results
-        fields = dict(line.split(":", 1) for line in result.split("\n") if ":" in line)
+            if is_motor:
+                display_fields["OD Amount"] = result_dict.get("od_amount", "0")
+                display_fields["TP Amount"] = result_dict.get("tp_amount", "0")
 
-        for key, value in fields.items():
-            if key.strip() in ["TP Amount", "OD Amount"] and value.strip() == "0":
-                continue  # Hide for non-motor policies
-            st.markdown(f"<div class='card'><strong>{key}:</strong> {value}</div>", unsafe_allow_html=True)
+            st.markdown("<div class='data-box'>", unsafe_allow_html=True)
+            for k, v in display_fields.items():
+                st.markdown(f"**{k}:** {v}")
+            st.markdown("</div>", unsafe_allow_html=True)
 
-        # Prepare CSV row
-        df_output = pd.DataFrame([fields])
+            results.append(display_fields)
+        except Exception as e:
+            st.error(f"❌ Error processing {file.name}: {e}")
 
-else:
-    uploaded_files = st.file_uploader("Upload Multiple PDFs", type=["pdf"], accept_multiple_files=True)
-    all_rows = []
-    if uploaded_files:
-        for file in uploaded_files:
-            st.write(f"Processing: {file.name}")
-            text = extract_text_from_pdf(file)
-            result = extract_policy_fields(text)
-            fields = dict(line.split(":", 1) for line in result.split("\n") if ":" in line)
-            all_rows.append(fields)
-        df_output = pd.DataFrame(all_rows)
-        st.dataframe(df_output)
-
-# CSV Download
-if not df_output.empty:
-    csv = df_output.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📥 Download Extracted Data as CSV",
-        data=csv,
-        file_name='extracted_policy_data.csv',
-        mime='text/csv'
-    )
+    # --- Download CSV ---
+    if results:
+        df = pd.DataFrame(results)
+        csv = df.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            label="📥 Download Results as CSV",
+            data=csv,
+            file_name="extracted_policy_data.csv",
+            mime="text/csv"
+        )
