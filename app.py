@@ -47,6 +47,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+<<<<<<< HEAD
 # Hero Section
 st.markdown("""
     <div class="hero">
@@ -54,6 +55,10 @@ st.markdown("""
         <p>Upload your PDF(s) and get structured, AI-generated policy details.</p>
     </div>
 """, unsafe_allow_html=True)
+=======
+    Format the output as JSON with keys:
+    customer name, policy_number, start_date, end_date, sum_insured, insurance_type, od_amount, tp_amount
+>>>>>>> 125058b2a9ffd0800088d66b78e86dc732e5f32d
 
 st_lottie(lottie_scanner, height=200)
 
