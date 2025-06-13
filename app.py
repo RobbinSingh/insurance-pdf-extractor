@@ -56,28 +56,29 @@ def extract_text_from_pdf(uploaded_file):
 # ---------- FUNCTION: EXTRACT FIELDS VIA OPENAI ---------- #
 def extract_policy_fields(text):
     prompt = f"""
-You are a data extraction assistant. Extract the following fields from the insurance policy text below.
+Extract the following fields from the insurance policy text:
 
-Fields:
-- policy_number
-- start_date
-- end_date
-- sp_code
-- customer_name
-- gross_amount
-- net_amount
-- sum_insured
-- od_amount
-- tp_amount
-- policy_type (Motor or Non-Motor)
+- Insurance Company Name
+- Type of Insurance (Health, Life, Motor, Property, etc.)
+- Policy Number
+- Policy Start Date
+- Policy End Date
+- SP Code
+- Customer Name
+- Sum Insured
+- Gross Amount
+- Net Amount
+- OD Amount (Only if Motor policy, else null)
+- TP Amount (Only if Motor policy, else null)
 
-IMPORTANT:
-- Return only a valid raw JSON object. Do NOT add triple backticks, explanations, or text around it.
-- Use `null` for fields like od_amount and tp_amount if it's not a motor policy.
+Return the result strictly as a valid JSON object with these keys:
+insurance_company, insurance_type, policy_number, start_date, end_date,
+sp_code, customer_name, sum_insured, gross_amount, net_amount, od_amount, tp_amount
 
 Policy Text:
 {text}
-    """
+"""
+
 
     response = client.chat.completions.create(
         model="gpt-4o",
@@ -130,17 +131,23 @@ elif mode == "Multiple PDFs":
 if results:
     for i, res in enumerate(results):
         st.markdown("""<div class="card">""", unsafe_allow_html=True)
-        st.subheader(f"📄 Policy {i+1}")
-        st.text(f"Customer Name: {res.get('customer_name')}")
-        st.text(f"Policy Number: {res.get('policy_number')}")
-        st.text(f"Start Date: {res.get('start_date')}  |  End Date: {res.get('end_date')}")
-        st.text(f"SP Code: {res.get('sp_code')}")
-        st.text(f"Gross Amount: {res.get('gross_amount')}  |  Net Amount: {res.get('net_amount')}")
-        st.text(f"Sum Insured: {res.get('sum_insured')}")
+        st.subheader(f"📄 Policy {i + 1}")
 
-        if res.get("policy_type", "").lower() == "motor":
-            st.text(f"Own Damage (OD): {res.get('od_amount')}  |  Third Party (TP): {res.get('tp_amount')}")
-        st.markdown("""</div>""", unsafe_allow_html=True)
+        st.markdown(f"**🏢 Insurance Company:** {res.get('insurance_company', 'N/A')}")
+        st.markdown(f"**📌 Insurance Type:** {res.get('insurance_type', 'N/A')}")
+        st.markdown(f"**🙍 Customer Name:** {res.get('customer_name', 'N/A')}")
+        st.markdown(f"**🧾 Policy Number:** {res.get('policy_number', 'N/A')}")
+        st.markdown(f"**📅 Duration:** {res.get('start_date', 'N/A')} ➡️ {res.get('end_date', 'N/A')}")
+        st.markdown(f"**🔐 SP Code:** {res.get('sp_code', 'N/A')}")
+        st.markdown(f"**💰 Gross Amount:** ₹ {res.get('gross_amount', 'N/A')}  |  **Net Amount:** ₹ {res.get('net_amount', 'N/A')}")
+        st.markdown(f"**📦 Sum Insured:** ₹ {res.get('sum_insured', 'N/A')}")
+
+        # Only for Motor Policies
+        if res.get("insurance_type", "").lower() == "motor":
+            st.markdown(f"**🚗 OD Amount:** ₹ {res.get('od_amount', '0')}  |  **🛡️ TP Amount:** ₹ {res.get('tp_amount', '0')}")
+
+        st.markdown("""</div><br>""", unsafe_allow_html=True)
+
 
     # ---------- DOWNLOAD CSV ---------- #
     csv_buffer = io.StringIO()
