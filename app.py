@@ -150,10 +150,26 @@ if results:
 
 
     # ---------- DOWNLOAD CSV ---------- #
-    csv_buffer = io.StringIO()
-    fieldnames = ["customer_name", "policy_number", "start_date", "end_date", "sp_code", "gross_amount", "net_amount", "sum_insured", "od_amount", "tp_amount", "policy_type"]
-    writer = csv.DictWriter(csv_buffer, fieldnames=fieldnames)
-    writer.writeheader()
-    writer.writerows(results)
+    all_fields = set()
+for res in results:
+    all_fields.update(res.keys())
 
-    st.download_button("📥 Download CSV", data=csv_buffer.getvalue(), file_name="extracted_policies.csv", mime="text/csv")
+fieldnames = [  # Optional preferred order
+    "customer_name", "policy_number", "start_date", "end_date",
+    "sp_code", "gross_amount", "net_amount", "sum_insured",
+    "od_amount", "tp_amount", "policy_type", "insurance_company", "insurance_type"
+]
+# Add any new fields not in your preferred list
+fieldnames += [f for f in all_fields if f not in fieldnames]
+
+csv_buffer = io.StringIO()
+writer = csv.DictWriter(csv_buffer, fieldnames=fieldnames)
+writer.writeheader()
+writer.writerows(results)
+
+st.download_button(
+    "📥 Download CSV",
+    data=csv_buffer.getvalue(),
+    file_name="extracted_policies.csv",
+    mime="text/csv"
+)
