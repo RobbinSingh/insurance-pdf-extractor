@@ -79,7 +79,6 @@ Policy Text:
 {text}
 """
 
-
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[{"role": "user", "content": prompt}],
@@ -88,7 +87,6 @@ Policy Text:
 
     raw_response = response.choices[0].message.content.strip()
 
-    # Fix: Strip code blocks and parse clean JSON
     try:
         if raw_response.startswith("```json"):
             raw_response = raw_response.replace("```json", "").replace("```", "").strip()
@@ -97,7 +95,6 @@ Policy Text:
         st.error("❌ Failed to parse AI response. Raw response shown below for debugging:")
         st.code(raw_response)
         raise e
-
 
 # ---------- MAIN LOGIC ---------- #
 mode = st.radio("Select Upload Mode", ["Single PDF", "Multiple PDFs"])
@@ -135,41 +132,42 @@ if results:
 
         st.markdown(f"**🏢 Insurance Company:** {res.get('insurance_company', 'N/A')}")
         st.markdown(f"**📌 Insurance Type:** {res.get('insurance_type', 'N/A')}")
-        st.markdown(f"**🙍 Customer Name:** {res.get('customer_name', 'N/A')}")
-        st.markdown(f"**🧾 Policy Number:** {res.get('policy_number', 'N/A')}")
+        st.markdown(f"**💍 Customer Name:** {res.get('customer_name', 'N/A')}")
+        st.markdown(f"**🧲 Policy Number:** {res.get('policy_number', 'N/A')}")
         st.markdown(f"**📅 Duration:** {res.get('start_date', 'N/A')} ➡️ {res.get('end_date', 'N/A')}")
         st.markdown(f"**🔐 SP Code:** {res.get('sp_code', 'N/A')}")
         st.markdown(f"**💰 Gross Amount:** ₹ {res.get('gross_amount', 'N/A')}  |  **Net Amount:** ₹ {res.get('net_amount', 'N/A')}")
         st.markdown(f"**📦 Sum Insured:** ₹ {res.get('sum_insured', 'N/A')}")
 
-        # Only for Motor Policies
         if res.get("insurance_type", "").lower() == "motor":
             st.markdown(f"**🚗 OD Amount:** ₹ {res.get('od_amount', '0')}  |  **🛡️ TP Amount:** ₹ {res.get('tp_amount', '0')}")
 
         st.markdown("""</div><br>""", unsafe_allow_html=True)
 
-
     # ---------- DOWNLOAD CSV ---------- #
     all_fields = set()
-for res in results:
-    all_fields.update(res.keys())
+    cleaned_results = []
+    for res in results:
+        if isinstance(res, dict):
+            cleaned = {k: (v if v is not None else "") for k, v in res.items()}
+            cleaned_results.append(cleaned)
+            all_fields.update(cleaned.keys())
 
-fieldnames = [  # Optional preferred order
-    "customer_name", "policy_number", "start_date", "end_date",
-    "sp_code", "gross_amount", "net_amount", "sum_insured",
-    "od_amount", "tp_amount", "policy_type", "insurance_company", "insurance_type"
-]
-# Add any new fields not in your preferred list
-fieldnames += [f for f in all_fields if f not in fieldnames]
+    fieldnames = [
+        "customer_name", "policy_number", "start_date", "end_date",
+        "sp_code", "gross_amount", "net_amount", "sum_insured",
+        "od_amount", "tp_amount", "policy_type", "insurance_company", "insurance_type"
+    ]
+    fieldnames += [f for f in all_fields if f not in fieldnames]
 
-csv_buffer = io.StringIO()
-writer = csv.DictWriter(csv_buffer, fieldnames=fieldnames)
-writer.writeheader()
-writer.writerows(results)
+    csv_buffer = io.StringIO()
+    writer = csv.DictWriter(csv_buffer, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(cleaned_results)
 
-st.download_button(
-    "📥 Download CSV",
-    data=csv_buffer.getvalue(),
-    file_name="extracted_policies.csv",
-    mime="text/csv"
-)
+    st.download_button(
+        "📅 Download CSV",
+        data=csv_buffer.getvalue(),
+        file_name="extracted_policies.csv",
+        mime="text/csv"
+    )
